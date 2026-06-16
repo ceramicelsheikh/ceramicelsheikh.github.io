@@ -1924,9 +1924,11 @@
       <aside class="sidebar">
         <div class="sidebar-box">
           <h4>🗂️ القسم</h4>
-          <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="أرضيات" onchange="applyFilters()"> أرضيات</label>
-          <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="حوائط" onchange="applyFilters()"> حوائط</label>
-          <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="بورسلين" onchange="applyFilters()"> بورسلين</label>
+          <div id="catSidebarList">
+            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="أرضيات" onchange="applyFilters()"> أرضيات</label>
+            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="حوائط" onchange="applyFilters()"> حوائط</label>
+            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="بورسلين" onchange="applyFilters()"> بورسلين</label>
+          </div>
         </div>
 
         <div class="sidebar-box">
@@ -1967,10 +1969,12 @@
       <!-- Products -->
       <div>
         <div class="filters-bar">
-          <button class="filter-btn active" onclick="setCatFilter('all', this)">الكل</button>
-          <button class="filter-btn" onclick="setCatFilter('أرضيات', this)">أرضيات</button>
-          <button class="filter-btn" onclick="setCatFilter('بورسلين', this)">بورسلين</button>
-          <button class="filter-btn" onclick="setCatFilter('حوائط', this)">حوائط</button>
+          <div id="catQuickButtons" style="display:contents">
+            <button class="filter-btn active" onclick="setCatFilter('all', this)">الكل</button>
+            <button class="filter-btn" onclick="setCatFilter('أرضيات', this)">أرضيات</button>
+            <button class="filter-btn" onclick="setCatFilter('بورسلين', this)">بورسلين</button>
+            <button class="filter-btn" onclick="setCatFilter('حوائط', this)">حوائط</button>
+          </div>
           <select class="filter-select" id="companyQuickFilter" onchange="setCompanyFilter(this.value)" style="margin-right:auto;">
             <option value="">🏅 كل الشركات</option>
             <option value="جالوريا">جالوريا</option>
@@ -2679,6 +2683,38 @@ async function loadProductsFromSupabase() {
   }
 }
 
+// ===== توليد فلتر القسم ديناميكياً من بيانات المنتجات الحقيقية =====
+// ✅ FIX: نفس مشكلة الشركة بالضبط — الأزرار والـ checkboxes كانت أسماء أقسام
+// ثابتة في الكود (أرضيات/حوائط/بورسلين)، ولو قيمة p.cat الحقيقية من قاعدة
+// البيانات مختلفة شكلاً (مسافة زيادة، حروف مختلفة...) فالفلتر يفضل صفر نتائج.
+// دلوقتي القائمة بتتبني من قيم p.cat الحقيقية، وأي قسم جديد تضيفه في قاعدة
+// البيانات يظهر في الموقع تلقائياً بدون أي تعديل كود.
+function populateCategoryFilters() {
+  const cats = [...new Set(
+    PRODUCTS.map(p => (p.cat || '').trim()).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'ar'));
+
+  console.log('🗂️ الأقسام الموجودة فعلياً في المنتجات:', cats);
+  if (cats.length === 0) {
+    console.warn('⚠️ مفيش ولا منتج عنده قيمة cat — تأكد إن عمود cat موجود في جدول products ومعبّى.');
+  }
+
+  // 1) أزرار الفلتر السريع فوق الكتالوج
+  const quickBtns = document.getElementById('catQuickButtons');
+  if (quickBtns) {
+    quickBtns.innerHTML = `<button class="filter-btn active" onclick="setCatFilter('all', this)">الكل</button>` +
+      cats.map(c => `<button class="filter-btn" onclick="setCatFilter('${c}', this)">${c}</button>`).join('');
+  }
+
+  // 2) checkboxes القسم في الـ sidebar
+  const sidebarList = document.getElementById('catSidebarList');
+  if (sidebarList) {
+    sidebarList.innerHTML = cats.map(c =>
+      `<label class="sidebar-check"><input type="checkbox" class="cat-filter" value="${c}" onchange="applyFilters()"> ${c}</label>`
+    ).join('') || '<span style="font-size:0.78rem;color:var(--text-dim)">لا توجد أقسام مسجّلة بعد</span>';
+  }
+}
+
 // ===== توليد فلتر الشركة ديناميكياً من بيانات المنتجات الحقيقية =====
 // ✅ FIX: القائمة كانت ثابتة (Hardcoded) بشركات افتراضية مش بالضرورة
 // نفس القيم الموجودة فعلياً في عمود company بقاعدة البيانات، فالفلتر
@@ -2716,7 +2752,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // حاول تحمّل من Supabase أولاً
   await loadProductsFromSupabase();
 
-  // ✅ بناء فلتر الشركة من البيانات الحقيقية
+  // ✅ بناء فلتر القسم وفلتر الشركة من البيانات الحقيقية
+  populateCategoryFilters();
   populateCompanyFilters();
 
   // ✅ تشخيص سريع لمشكلة "الصور المتعددة": هل كل منتج فعلاً واصله أكتر من صورة؟

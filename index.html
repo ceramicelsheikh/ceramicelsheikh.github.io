@@ -1931,10 +1931,12 @@
 
         <div class="sidebar-box">
           <h4>🏅 الشركة / التوكيل</h4>
-          <label class="sidebar-check"><input type="checkbox" class="company-filter" value="جالوريا" onchange="applyFilters()"> جالوريا</label>
-          <label class="sidebar-check"><input type="checkbox" class="company-filter" value="مايوركا" onchange="applyFilters()"> مايوركا</label>
-          <label class="sidebar-check"><input type="checkbox" class="company-filter" value="أوميجا" onchange="applyFilters()"> أوميجا</label>
-          <label class="sidebar-check"><input type="checkbox" class="company-filter" value="إليجنت" onchange="applyFilters()"> إليجنت</label>
+          <div id="companySidebarList">
+            <label class="sidebar-check"><input type="checkbox" class="company-filter" value="جالوريا" onchange="applyFilters()"> جالوريا</label>
+            <label class="sidebar-check"><input type="checkbox" class="company-filter" value="مايوركا" onchange="applyFilters()"> مايوركا</label>
+            <label class="sidebar-check"><input type="checkbox" class="company-filter" value="أوميجا" onchange="applyFilters()"> أوميجا</label>
+            <label class="sidebar-check"><input type="checkbox" class="company-filter" value="إليجنت" onchange="applyFilters()"> إليجنت</label>
+          </div>
         </div>
 
         <div class="sidebar-box">
@@ -2677,10 +2679,52 @@ async function loadProductsFromSupabase() {
   }
 }
 
+// ===== توليد فلتر الشركة ديناميكياً من بيانات المنتجات الحقيقية =====
+// ✅ FIX: القائمة كانت ثابتة (Hardcoded) بشركات افتراضية مش بالضرورة
+// نفس القيم الموجودة فعلياً في عمود company بقاعدة البيانات، فالفلتر
+// كان يرجع صفر نتائج دايماً. دلوقتي نبني القائمة من المنتجات الحقيقية.
+function populateCompanyFilters() {
+  const companies = [...new Set(
+    PRODUCTS.map(p => (p.company || '').trim()).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'ar'));
+
+  console.log('🏅 الشركات الموجودة فعلياً في المنتجات:', companies);
+  if (companies.length === 0) {
+    console.warn('⚠️ مفيش ولا منتج عنده قيمة company — تأكد إن عمود company موجود في جدول products ومعبّى بقاعدة البيانات.');
+  }
+
+  // 1) الـ dropdown السريع فوق الكتالوج
+  const drop = document.getElementById('companyQuickFilter');
+  if (drop) {
+    const current = drop.value;
+    drop.innerHTML = `<option value="">🏅 كل الشركات</option>` +
+      companies.map(c => `<option value="${c}">${c}</option>`).join('');
+    drop.value = companies.includes(current) ? current : '';
+  }
+
+  // 2) الـ checkboxes في الـ sidebar
+  const sidebarList = document.getElementById('companySidebarList');
+  if (sidebarList) {
+    sidebarList.innerHTML = companies.map(c =>
+      `<label class="sidebar-check"><input type="checkbox" class="company-filter" value="${c}" onchange="applyFilters()"> ${c}</label>`
+    ).join('') || '<span style="font-size:0.78rem;color:var(--text-dim)">لا توجد شركات مسجّلة بعد</span>';
+  }
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', async () => {
   // حاول تحمّل من Supabase أولاً
   await loadProductsFromSupabase();
+
+  // ✅ بناء فلتر الشركة من البيانات الحقيقية
+  populateCompanyFilters();
+
+  // ✅ تشخيص سريع لمشكلة "الصور المتعددة": هل كل منتج فعلاً واصله أكتر من صورة؟
+  const multiImgCount = PRODUCTS.filter(p => p.images && p.images.length > 1).length;
+  console.log(`🖼️ منتجات بصور متعددة: ${multiImgCount} من ${PRODUCTS.length}`);
+  if (multiImgCount === 0) {
+    console.warn('⚠️ مفيش ولا منتج راجع له أكتر من صورة من جدول product_images — لو ضفت كذا صورة لنفس المنتج وبرضو ظهرت صورة واحدة، يبقى السبب الأرجح: RLS بيمنع قراءة جدول product_images للزوار (anon)، أو إن أعمدة الجدول مختلفة عن prod_id/url/sort_order.');
+  }
 
   // أخفي شاشة التحميل
   const ls = document.getElementById('loadingScreen');
@@ -2854,7 +2898,7 @@ function renderOffers() {
         <h3>${p.name}</h3>
         <div style="font-size:0.78rem;color:var(--text-dim)">${p.cat} | ${p.size} | ${p.sort}</div>
         <div style="display:flex;gap:0.6rem;margin-top:0.75rem">
-          <button class="btn-primary" style="flex:1;padding:0.5rem 0;font-size:0.82rem;justify-content:center" onclick="openWhatsApp('${p.name}')">💬 اطلب الآن</button>
+          <button class="btn-primary" style="flex:1;padding:0.5rem 0;font-size:0.82rem;justify-content:center" onclick="openWhatsApp(${p.id})">💬 اطلب الآن</button>
           <button class="btn-outline" style="padding:0.5rem 0.8rem;font-size:0.82rem" onclick="openProductModal(${p.id})">التفاصيل</button>
         </div>
       </div>
@@ -2924,7 +2968,7 @@ function productCard(p) {
         <div class="product-footer" style="justify-content:space-between;flex-direction:column;gap:0.5rem">
           <div id="rating-${p.id}" style="display:flex;align-items:center;gap:0.1rem;" onclick="event.stopPropagation()"></div>
           <div class="card-actions">
-            <button class="card-actions button btn-wa-small" onclick="saveOrder(${p.id});openWhatsApp('${p.name.replace(/'/g,'')}')">💬 اطلب</button>
+            <button class="card-actions button btn-wa-small" onclick="saveOrder(${p.id});openWhatsApp(${p.id})">💬 اطلب</button>
             <button onclick="addToSell(${p.id})" style="background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.3);color:var(--gold);padding:0.4rem 0.7rem;border-radius:6px;font-family:'Cairo',sans-serif;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(201,168,76,0.2)'" onmouseout="this.style.background='rgba(201,168,76,0.12)'">🛒 سلة</button>
             <button class="btn-detail" onclick="trackProductView(${p.id});openProductModal(${p.id})">التفاصيل</button>
           </div>
@@ -3076,12 +3120,14 @@ function closeModal(e) {
 function buyNow() {
   const p = PRODUCTS.find(x => x.id === currentModalId);
   if (p) {
-    const msg = `مرحباً أ/ محمود، أنا مهتم بالمنتج التالي من موقع الشيخ للسيراميك:
-- الاسم: ${p.name}
-- المقاس: ${p.size}
-- الفرز: ${p.sort}
-- السعر: ${p.price} جنيه/م²
-أرجو التواصل 🙏`;
+    let msg = `مرحباً أ/ محمود، أنا مهتم بالمنتج التالي من موقع الشيخ للسيراميك:\n\n`;
+    msg += `📦 الاسم: ${p.name}\n`;
+    if (p.company) msg += `🏅 الشركة: ${p.company}\n`;
+    if (p.size)    msg += `📏 المقاس: ${p.size}\n`;
+    if (p.sort)    msg += `⭐ الفرز: ${p.sort}\n`;
+    if (p.price)   msg += `💰 السعر: ${p.price} جنيه/م²\n`;
+    if (p.img)     msg += `🖼️ صورة المنتج: ${p.img}\n`;
+    msg += `\nأرجو التواصل 🙏`;
     window.open('https://wa.me/201123068628?text=' + encodeURIComponent(msg), '_blank');
   }
   closeModal();
@@ -3395,12 +3441,33 @@ function scrollToCalc() {
 }
 
 // ===== WHATSAPP =====
-function openWhatsApp(product) {
-  const msg = product
-    ? `مرحباً أ/ محمود، عندي استفسار عن منتج من موقع الشيخ للسيراميك:
-- ${product}
-أرجو التواصل 🙏`
-    : 'مرحباً أ/ محمود، أريد الاستفسار عن منتجاتكم في الشيخ للسيراميك والبورسلين 🙏';
+function openWhatsApp(productOrId) {
+  let msg;
+
+  if (productOrId === undefined || productOrId === null || productOrId === '') {
+    // استفسار عام، بدون منتج محدد
+    msg = 'مرحباً أ/ محمود، أريد الاستفسار عن منتجاتكم في الشيخ للسيراميك والبورسلين 🙏';
+  } else {
+    // ✅ FIX: بقت تستقبل id المنتج وتجيب بياناته كاملة (الاسم + الشركة + المقاس + الصورة)
+    // بدل ما كانت تستقبل الاسم بس، عشان صاحب الواتساب يوصله كل التفاصيل المهمة
+    const p = (typeof productOrId === 'number')
+      ? PRODUCTS.find(x => x.id === productOrId)
+      : PRODUCTS.find(x => x.id === parseInt(productOrId));
+
+    if (p) {
+      msg = `مرحباً أ/ محمود، عندي استفسار عن منتج من موقع الشيخ للسيراميك:\n\n`;
+      msg += `📦 *${p.name}*\n`;
+      if (p.company) msg += `🏅 الشركة: ${p.company}\n`;
+      if (p.size)    msg += `📏 المقاس: ${p.size}\n`;
+      if (p.sort)    msg += `⭐ الفرز: ${p.sort}\n`;
+      if (p.img)     msg += `🖼️ صورة المنتج: ${p.img}\n`;
+      msg += `\nأرجو التواصل لتأكيد الطلب 🙏`;
+    } else {
+      // توافق مع الاستخدام القديم لو دخل نص (اسم منتج) بدل id
+      msg = `مرحباً أ/ محمود، عندي استفسار عن منتج من موقع الشيخ للسيراميك:\n- ${productOrId}\nأرجو التواصل 🙏`;
+    }
+  }
+
   window.open('https://wa.me/201123068628?text=' + encodeURIComponent(msg), '_blank');
 }
 
@@ -4022,7 +4089,7 @@ function renderCompareTable() {
     { label: '🔷 النوع',      key: p => p.cat === 'بورسلين' ? 'بورسلين' : 'سيراميك' },
     {
       label: '📞 اطلب',
-      key: p => `<button onclick="openWhatsApp('${p.name}')" style="background:linear-gradient(135deg,#25d366,#128c7e);color:white;border:none;padding:0.35rem 0.75rem;border-radius:6px;font-family:'Cairo',sans-serif;font-size:0.75rem;font-weight:700;cursor:pointer;">💬 واتساب</button>`
+      key: p => `<button onclick="openWhatsApp(${p.id})" style="background:linear-gradient(135deg,#25d366,#128c7e);color:white;border:none;padding:0.35rem 0.75rem;border-radius:6px;font-family:'Cairo',sans-serif;font-size:0.75rem;font-weight:700;cursor:pointer;">💬 واتساب</button>`
     },
   ];
 

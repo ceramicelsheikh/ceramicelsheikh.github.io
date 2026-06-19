@@ -2576,6 +2576,38 @@ const SUPABASE_URL = "https://urjmtimykifezxlkflfg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_pz7UbVxjyPvxGpQMA-VN8g_jtqJ3RWP";
 const _supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ===== [إضافة] دعم عرض الفيديو (MP4/WebM/MOV) جنباً إلى جنب مع الصور =====
+// لا تحذف ولا تغيّر أي كود قائم — هذه دوال إضافية فقط، تُستخدم في أماكن
+// عرض الصور الحالية لتحديد هل الرابط فيديو أم صورة وعرض العنصر المناسب.
+function isVideoUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.split('?')[0].split('#')[0].toLowerCase();
+  return /\.(mp4|webm|mov|m4v)$/.test(clean);
+}
+window.isVideoUrl = isVideoUrl;
+
+// بيرجع HTML لعنصر <video> أو <img> حسب نوع الرابط، بنفس الـ style الممرر
+// extraAttrs: أي خصائص إضافية زي onclick أو loading="lazy"
+function renderMediaTag(url, styleStr, extraAttrs) {
+  if (!url) return '';
+  styleStr = styleStr || '';
+  extraAttrs = extraAttrs || '';
+  if (isVideoUrl(url)) {
+    console.log('Video URL:', url);
+    const lower = url.toLowerCase();
+    const mime = lower.includes('.webm') ? 'video/webm' : lower.includes('.mov') ? 'video/quicktime' : 'video/mp4';
+    return `<video controls preload="metadata" playsinline style="${styleStr}" ${extraAttrs}
+        onloadeddata="console.log('Video loaded:', this.currentSrc)"
+        onerror="console.error('Video error', this.error)">
+      <source src="${url}" type="${mime}">
+      <source src="${url}">
+      متصفحك لا يدعم تشغيل الفيديو.
+    </video>`;
+  }
+  return `<img src="${url}" style="${styleStr}" ${extraAttrs}>`;
+}
+window.renderMediaTag = renderMediaTag;
+
 // تحويل بيانات Supabase لنفس شكل PRODUCTS
 // بيشتغل بالأعمدة الموجودة بس: id, name, usage, image, size, grade, color
 function mapSupabaseProduct(row, idx) {
@@ -2793,7 +2825,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (prod.img) {
         el.style.overflow = 'hidden';
-        el.innerHTML = `<img src="${prod.img}" style="width:100%;height:100%;object-fit:cover;"><div class="overlay">👁</div>`;
+        el.innerHTML = renderMediaTag(prod.img, 'width:100%;height:100%;object-fit:cover;') + '<div class="overlay">👁</div>';
       }
     }
   }
@@ -2928,7 +2960,7 @@ function renderOffers() {
   grid.innerHTML = offers.map(p => `
     <div class="offer-card">
       <div class="offer-img" style="${p.img ? '' : 'display:flex;align-items:center;justify-content:center;font-size:3rem;background:var(--dark3)'}">
-        ${p.img ? `<img src="${p.img}" style="width:100%;height:100%;object-fit:cover;">` : '🪨'}
+        ${p.img ? renderMediaTag(p.img, 'width:100%;height:100%;object-fit:cover;') : '🪨'}
         <div class="offer-pct">-${p.discount}%</div>
       </div>
       <div class="offer-body">
@@ -2984,7 +3016,9 @@ function toggleFAQ(i) {
 function productCard(p) {
   const isFav = favorites.includes(p.id);
   const imgHtml = p.img
-    ? `<img src="${p.img}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in;" onclick="event.stopPropagation();openLightbox('${p.img}','${p.name.replace(/'/g,'')}')">` 
+    ? (isVideoUrl(p.img)
+        ? renderMediaTag(p.img, 'width:100%;height:100%;object-fit:cover;display:block;')
+        : `<img src="${p.img}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in;" onclick="event.stopPropagation();openLightbox('${p.img}','${p.name.replace(/'/g,'')}')">`)
     : `<div style="width:100%;height:100%;background:var(--dark3);display:flex;align-items:center;justify-content:center;font-size:3rem">🪨</div>`;
   return `
     <div class="product-card">
@@ -3075,9 +3109,9 @@ function openProductModal(id) {
 
   function setMainImage(src, idx) {
     activeImgIdx = idx;
-    mainImg.onclick = src ? () => openLightbox(src, p.name) : null;
+    mainImg.onclick = (src && !isVideoUrl(src)) ? () => openLightbox(src, p.name) : null;
     mainImg.innerHTML = src
-      ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;cursor:zoom-in;">`
+      ? renderMediaTag(src, 'width:100%;height:100%;object-fit:cover;border-radius:12px;' + (isVideoUrl(src) ? '' : 'cursor:zoom-in;'))
       : `<span style="font-size:4rem">🪨</span>`;
     // تحديث الصورة المصغرة النشطة
     document.querySelectorAll('.modal-thumb').forEach((t, i) => {
@@ -3094,9 +3128,11 @@ function openProductModal(id) {
   if (images.length > 0) {
     thumbsEl.innerHTML = images.map((url, i) => `
       <div class="modal-thumb ${i === 0 ? 'active' : ''}"
-           style="background:var(--dark3);overflow:hidden;cursor:pointer;flex-shrink:0;"
+           style="background:var(--dark3);overflow:hidden;cursor:pointer;flex-shrink:0;position:relative;"
            onclick="selectModalImage(${i})">
-        <img src="${url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy">
+        ${isVideoUrl(url)
+          ? `<video src="${url}" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.7);pointer-events:none;">▶</div>`
+          : `<img src="${url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy">`}
       </div>`).join('');
     setMainImage(images[0], 0);
   } else {
@@ -3137,8 +3173,9 @@ function selectModalImage(idx) {
   const name = window._modalProductName || '';
   if (!imgs[idx]) return;
   const mainImg = document.getElementById('modalMainImg');
-  mainImg.onclick = () => openLightbox(imgs[idx], name);
-  mainImg.innerHTML = `<img src="${imgs[idx]}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;cursor:zoom-in;">`;
+  const src = imgs[idx];
+  mainImg.onclick = isVideoUrl(src) ? null : () => openLightbox(src, name);
+  mainImg.innerHTML = renderMediaTag(src, 'width:100%;height:100%;object-fit:cover;border-radius:12px;' + (isVideoUrl(src) ? '' : 'cursor:zoom-in;'));
   document.querySelectorAll('.modal-thumb').forEach((t, i) => t.classList.toggle('active', i === idx));
 }
 window.selectModalImage = selectModalImage;
@@ -3839,6 +3876,7 @@ let lbDragging = false, lbStartX = 0, lbStartY = 0, lbLastX = 0, lbLastY = 0;
 let currentLbSrc = '';
 
 function openLightbox(src, productName) {
+  if (isVideoUrl(src)) { console.log('openLightbox: تم تجاهل رابط فيديو (الفيديو له مشغّل خاص به)', src); return; }
   currentLbSrc = src;
   const lb = document.getElementById('lightbox');
   const img = document.getElementById('lightbox-img');
@@ -3953,7 +3991,7 @@ function shareProduct(platform, name) {
   const url = window.location.href;
   const text = `شوف ${name} في معرض الشيخ للسيراميك والبورسلين 🏛️\n${url}`;
   if (platform === 'whatsapp') window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-  if (platform === 'facebook') window.open('https://www.facebook.com/share/1D2fjKBK3p/', '_blank');
+  if (platform === 'facebook') window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
   if (platform === 'telegram') window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(name)}`, '_blank');
 }
 window.shareProduct = shareProduct;
@@ -4087,7 +4125,7 @@ function selectCompareProduct(slot, idStr) {
   } else {
     const p = PRODUCTS.find(x => x.id === compareSlots[slot]);
     if (p && p.img) {
-      thumb.innerHTML = `<img src="${p.img}" style="width:100%;height:100%;object-fit:cover;">`;
+      thumb.innerHTML = renderMediaTag(p.img, 'width:100%;height:100%;object-fit:cover;');
     } else {
       thumb.innerHTML = `<div style="text-align:center;padding:0.5rem;font-size:0.78rem;color:var(--text)">${p ? p.name : ''}</div>`;
     }
@@ -4230,7 +4268,7 @@ function renderSellCart() {
     <div style="background:var(--dark3);border:1px solid rgba(201,168,76,0.1);border-radius:12px;padding:0.9rem;margin-bottom:0.75rem;display:flex;gap:0.75rem;align-items:flex-start;">
       <!-- صورة -->
       <div style="width:60px;height:60px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--dark4);">
-        ${item.img ? `<img src="${item.img}" style="width:100%;height:100%;object-fit:cover;" loading="lazy">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🪨</div>'}
+        ${item.img ? renderMediaTag(item.img, 'width:100%;height:100%;object-fit:cover;', 'loading="lazy"') : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🪨</div>'}
       </div>
       <!-- تفاصيل -->
       <div style="flex:1;min-width:0;">

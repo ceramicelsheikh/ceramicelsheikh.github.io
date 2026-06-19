@@ -1925,9 +1925,9 @@
         <div class="sidebar-box">
           <h4>🗂️ القسم</h4>
           <div id="catSidebarList">
-            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="أرضيات" onchange="applyFilters()"> أرضيات</label>
-            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="حوائط" onchange="applyFilters()"> حوائط</label>
-            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="بورسلين" onchange="applyFilters()"> بورسلين</label>
+            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="أرضيات" onchange="applyFilters()"> 🏠 أرضيات</label>
+            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="حوائط" onchange="applyFilters()"> 🧱 حوائط</label>
+            <label class="sidebar-check"><input type="checkbox" class="cat-filter" value="بورسلين" onchange="applyFilters()"> ✨ بورسلين</label>
           </div>
         </div>
 
@@ -1971,9 +1971,10 @@
         <div class="filters-bar">
           <div id="catQuickButtons" style="display:contents">
             <button class="filter-btn active" onclick="setCatFilter('all', this)">الكل</button>
-            <button class="filter-btn" onclick="setCatFilter('أرضيات', this)">أرضيات</button>
-            <button class="filter-btn" onclick="setCatFilter('بورسلين', this)">بورسلين</button>
-            <button class="filter-btn" onclick="setCatFilter('حوائط', this)">حوائط</button>
+            <button class="filter-btn" onclick="setCatFilter('أرضيات', this)">🏠 أرضيات</button>
+            <button class="filter-btn" onclick="setCatFilter('بورسلين', this)">✨ بورسلين</button>
+            <button class="filter-btn" onclick="setCatFilter('حوائط', this)">🧱 حوائط</button>
+            <button class="filter-btn" onclick="setCatFilter('عروض', this)">🔥 عروض</button>
           </div>
           <select class="filter-select" id="companyQuickFilter" onchange="setCompanyFilter(this.value)" style="margin-right:auto;">
             <option value="">🏅 كل الشركات</option>
@@ -2608,22 +2609,34 @@ function renderMediaTag(url, styleStr, extraAttrs) {
 }
 window.renderMediaTag = renderMediaTag;
 
+// ===== [إضافة] دالة موحّدة لاكتشاف هل المنتج "عرض" أم لا =====
+// المنتج يعتبر عرض لو: offer === true أو is_offer === true أو discount > 0
+// تُستخدم في فلتر "🔥 عروض" وفي حساب الـ Badge بدون تكرار نفس الشرط في أكتر من مكان.
+function isOfferProduct(p) {
+  if (!p) return false;
+  return !!(p.offer === true || p.is_offer === true || (Number(p.discount) > 0));
+}
+window.isOfferProduct = isOfferProduct;
+
 // تحويل بيانات Supabase لنفس شكل PRODUCTS
 // بيشتغل بالأعمدة الموجودة بس: id, name, usage, image, size, grade, color
 function mapSupabaseProduct(row, idx) {
   const usage = row.usage || '';
 
-  // ✅ FIX: تحديد القسم بدقة — الأولوية لـ cat الصريحة من قاعدة البيانات،
-  //         وإلا نستنتجها من usage بترتيب صحيح (أرضيات قبل حوائط قبل بورسلين)
-  let cat = 'بورسلين'; // الافتراضي
-  if (row.cat) {
+  // ✅ FIX (فلاتر): تحديد القسم بدقة — الأولوية لـ cat الصريحة من قاعدة البيانات،
+  //         وإلا نستنتجها من usage + اسم المنتج بترتيب صحيح (أرضيات قبل حوائط قبل بورسلين)
+  //         ✅ [تحسين] توسيع كلمات البحث لتشمل أشكال كتابة مختلفة (مسافات/همزات/جمع) وتفقد اسم المنتج كمان
+  //         لو مفيش usage صريح، عشان مايفضلش كل المنتجات تطلع "بورسلين" بالديفولت غلط.
+  const haystack = `${usage} ${row.name || ''}`.trim();
+  let cat = 'بورسلين'; // الافتراضي لو فشلت كل المحاولات
+  if (row.cat && String(row.cat).trim()) {
     // لو الـ cat موجودة صريحة في قاعدة البيانات، خذها مباشرة
-    cat = row.cat;
-  } else if (usage.includes('أرضيات') || usage.includes('أرضية') || usage.includes('ارضيات') || usage.includes('ارضية')) {
+    cat = String(row.cat).trim();
+  } else if (/أرضيات|أرضية|ارضيات|ارضية|ارضي|أرضي|floor/i.test(haystack)) {
     cat = 'أرضيات';
-  } else if (usage.includes('حوائط') || usage.includes('حائط') || usage.includes('مطبخ') || usage.includes('حمام')) {
+  } else if (/حوائط|حائط|حيطان|حيطه|حائطي|مطبخ|حمام|wall/i.test(haystack)) {
     cat = 'حوائط';
-  } else if (usage.includes('بورسلين')) {
+  } else if (/بورسلين|برسلين|porcelain/i.test(haystack)) {
     cat = 'بورسلين';
   }
 
@@ -2634,6 +2647,10 @@ function mapSupabaseProduct(row, idx) {
     ? row.images
     : (row.image ? [row.image] : []);
 
+  // ✅ [إضافة] اكتشاف حالة "العرض" من أعمدة Supabase (لو موجودة): offer / is_offer / discount / old_price
+  const rowOldPrice = Number(row.old_price ?? row.oldPrice);
+  const isOfferRow = !!(row.offer === true || row.is_offer === true || (Number(row.discount) > 0) || (rowOldPrice > 0 && rowOldPrice !== Number(row.price)));
+
   return {
     id:       row.id ?? idx,
     name:     row.name || '',
@@ -2641,12 +2658,14 @@ function mapSupabaseProduct(row, idx) {
     size:     row.size || '',
     sort:     row.grade || '',
     price:    row.price || 0,
-    oldPrice: null,
+    // ✅ [إصلاح] السعر القديم ييجي من عمود old_price (أو oldPrice) لو موجود، وإلا يفضل فاضي
+    oldPrice: (rowOldPrice > 0) ? rowOldPrice : null,
     color:    row.color || '',
     use:      usage,
     company:  row.company || '',
     qty:      0,
-    badge:    null,
+    // ✅ [إضافة] لو المنتج عرض يظهر عليه Badge "🔥 عرض" تلقائياً بدون تغيير شكل الكارت
+    badge:    isOfferRow ? '🔥 عرض' : null,
 
     // أول صورة للكارت والـ fallback
     img: imagesArr[0] || null,
@@ -2654,8 +2673,10 @@ function mapSupabaseProduct(row, idx) {
     // كل الصور للمعرض
     images: imagesArr,
 
-    offer: false,
-    discount: null,
+    offer: isOfferRow,
+    is_offer: isOfferRow,
+    old_price: (rowOldPrice > 0) ? rowOldPrice : null,
+    discount: (row.discount != null && Number(row.discount) > 0) ? Number(row.discount) : (row.discount || null),
   };
 }
 
@@ -2715,6 +2736,15 @@ async function loadProductsFromSupabase() {
   }
 }
 
+// ===== [إضافة] إيموجي مناسب لكل قسم — للعرض فقط، لا يؤثر على قيمة الفلترة الحقيقية =====
+function catEmoji(cat) {
+  if (cat === 'أرضيات') return '🏠 ';
+  if (cat === 'حوائط') return '🧱 ';
+  if (cat === 'بورسلين') return '✨ ';
+  return '';
+}
+window.catEmoji = catEmoji;
+
 // ===== توليد فلتر القسم ديناميكياً من بيانات المنتجات الحقيقية =====
 // ✅ FIX: نفس مشكلة الشركة بالضبط — الأزرار والـ checkboxes كانت أسماء أقسام
 // ثابتة في الكود (أرضيات/حوائط/بورسلين)، ولو قيمة p.cat الحقيقية من قاعدة
@@ -2735,14 +2765,16 @@ function populateCategoryFilters() {
   const quickBtns = document.getElementById('catQuickButtons');
   if (quickBtns) {
     quickBtns.innerHTML = `<button class="filter-btn active" onclick="setCatFilter('all', this)">الكل</button>` +
-      cats.map(c => `<button class="filter-btn" onclick="setCatFilter('${c}', this)">${c}</button>`).join('');
+      cats.map(c => `<button class="filter-btn" onclick="setCatFilter('${c}', this)">${catEmoji(c)}${c}</button>`).join('') +
+      // ✅ [إضافة] زرار فلتر "🔥 عروض" ثابت دايماً بجوار باقي الأقسام بنفس الطريقة
+      `<button class="filter-btn" onclick="setCatFilter('عروض', this)">🔥 عروض</button>`;
   }
 
   // 2) checkboxes القسم في الـ sidebar
   const sidebarList = document.getElementById('catSidebarList');
   if (sidebarList) {
     sidebarList.innerHTML = cats.map(c =>
-      `<label class="sidebar-check"><input type="checkbox" class="cat-filter" value="${c}" onchange="applyFilters()"> ${c}</label>`
+      `<label class="sidebar-check"><input type="checkbox" class="cat-filter" value="${c}" onchange="applyFilters()"> ${catEmoji(c)}${c}</label>`
     ).join('') || '<span style="font-size:0.78rem;color:var(--text-dim)">لا توجد أقسام مسجّلة بعد</span>';
   }
 }
@@ -2887,7 +2919,10 @@ function renderCatalog() {
   if (activeFilters.catQuick !== 'all') {
     const target = activeFilters.catQuick;
     console.log(`🔍 filterAndGo → catQuick="${target}" | عدد المنتجات قبل الفلترة: ${prods.length}`);
-    prods = prods.filter(p => p.cat === target);
+    // ✅ [إضافة] فلتر "🔥 عروض" يعتمد على حالة العرض بدل مطابقة القسم
+    prods = (target === 'عروض')
+      ? prods.filter(p => isOfferProduct(p))
+      : prods.filter(p => p.cat === target);
     console.log(`✅ بعد الفلترة: ${prods.length} منتج`);
   }
 
@@ -2940,9 +2975,14 @@ function renderCatalog() {
 
   if (!prods.length) {
     grid.innerHTML = '';
-    // ✅ FIX: fallback رسالة واضحة لو مفيش منتجات للقسم المحدد
-    const catLabel = activeFilters.catQuick !== 'all' ? ` في قسم "${activeFilters.catQuick}"` : '';
-    noResults.innerHTML = `<div style="font-size:3rem;margin-bottom:1rem">😕</div><div>لا توجد منتجات${catLabel} حالياً</div>`;
+    // ✅ [إضافة] رسالة مخصّصة لفلتر "🔥 عروض" لو مفيش عروض حالياً
+    if (activeFilters.catQuick === 'عروض') {
+      noResults.innerHTML = `<div style="font-size:3rem;margin-bottom:1rem">😕</div><div>لا توجد عروض متاحة حالياً.</div>`;
+    } else {
+      // ✅ FIX: fallback رسالة واضحة لو مفيش منتجات للقسم المحدد
+      const catLabel = activeFilters.catQuick !== 'all' ? ` في قسم "${activeFilters.catQuick}"` : '';
+      noResults.innerHTML = `<div style="font-size:3rem;margin-bottom:1rem">😕</div><div>لا توجد منتجات${catLabel} حالياً</div>`;
+    }
     noResults.style.display = 'block';
   } else {
     noResults.style.display = 'none';
@@ -2955,24 +2995,37 @@ function renderCatalog() {
 
 // ===== RENDER OFFERS =====
 function renderOffers() {
-  const offers = PRODUCTS.filter(p => p.offer);
+  const offers = PRODUCTS.filter(p => isOfferProduct(p));
   const grid = document.getElementById('offersGrid');
-  grid.innerHTML = offers.map(p => `
+  grid.innerHTML = offers.map(p => {
+    const oldP = Number(p.old_price ?? p.oldPrice);
+    const newP = Number(p.price);
+    const hasOldPrice = oldP > 0 && oldP !== newP;
+    const pct = hasOldPrice ? Math.round(((oldP - newP) / oldP) * 100) : null;
+    const pctHtml = (pct !== null && !isNaN(pct) && pct > 0) ? `<div class="offer-pct">-${pct}%</div>` : '';
+    const priceHtml = `
+        <div class="price-box" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem">
+          ${hasOldPrice ? `<div class="old-price">${oldP} جنيه</div>` : ''}
+          <div class="price">${newP || 0} جنيه</div>
+        </div>`;
+    return `
     <div class="offer-card">
       <div class="offer-img" style="${p.img ? '' : 'display:flex;align-items:center;justify-content:center;font-size:3rem;background:var(--dark3)'}">
         ${p.img ? renderMediaTag(p.img, 'width:100%;height:100%;object-fit:cover;') : '🪨'}
-        <div class="offer-pct">-${p.discount}%</div>
+        ${pctHtml}
       </div>
       <div class="offer-body">
         <h3>${p.name}</h3>
         <div style="font-size:0.78rem;color:var(--text-dim)">${p.cat} | ${p.size} | ${p.sort}</div>
+        ${priceHtml}
         <div style="display:flex;gap:0.6rem;margin-top:0.75rem">
           <button class="btn-primary" style="flex:1;padding:0.5rem 0;font-size:0.82rem;justify-content:center" onclick="openWhatsApp(${p.id})">💬 اطلب الآن</button>
           <button class="btn-outline" style="padding:0.5rem 0.8rem;font-size:0.82rem" onclick="openProductModal(${p.id})">التفاصيل</button>
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 // ===== RENDER FAQ =====
@@ -3024,7 +3077,7 @@ function productCard(p) {
     <div class="product-card">
       <div class="product-img" style="background:var(--dark3)">
         ${imgHtml}
-        ${p.badge ? `<div class="product-badge ${p.badge === 'عرض' ? 'offer' : p.badge === 'جديد' ? 'new' : ''}">${p.badge}</div>` : ''}
+        ${p.badge ? `<div class="product-badge ${(p.badge === 'عرض' || p.badge === '🔥 عرض') ? 'offer' : p.badge === 'جديد' ? 'new' : ''}">${p.badge}</div>` : ''}
         <button class="product-fav ${isFav ? 'active' : ''}" onclick="toggleFav(event,${p.id})">${isFav ? '♥' : '♡'}</button>
       </div>
       <div class="product-info">
@@ -3038,6 +3091,23 @@ function productCard(p) {
         </div>
         <div class="product-footer" style="justify-content:space-between;flex-direction:column;gap:0.5rem">
           <div id="rating-${p.id}" style="display:flex;align-items:center;gap:0.1rem;" onclick="event.stopPropagation()"></div>
+          ${isOfferProduct(p) ? (() => {
+            const oldP = Number(p.old_price ?? p.oldPrice);
+            const newP = Number(p.price);
+            const hasOldPrice = oldP > 0 && oldP !== newP;
+            const pct = hasOldPrice ? Math.round(((oldP - newP) / oldP) * 100) : null;
+            return `
+          <div class="price-box" style="display:flex;align-items:center;gap:0.5rem;">
+            ${hasOldPrice ? `<div class="old-price">${oldP} جنيه</div>` : ''}
+            <div class="price">${newP || 0} جنيه</div>
+            ${(pct !== null && !isNaN(pct) && pct > 0) ? `<span style="font-size:0.68rem;color:var(--gold);font-weight:700;">(خصم ${pct}%)</span>` : ''}
+          </div>
+          `;
+          })() : `
+          <div class="price-box" style="display:flex;align-items:center;gap:0.5rem;">
+            <div class="price">${Number(p.price) || 0} جنيه</div>
+          </div>
+          `}
           <div class="card-actions">
             <button class="card-actions button btn-wa-small" onclick="saveOrder(${p.id});openWhatsApp(${p.id})">💬 اطلب</button>
             <button onclick="addToSell(${p.id})" style="background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.3);color:var(--gold);padding:0.4rem 0.7rem;border-radius:6px;font-family:'Cairo',sans-serif;font-size:0.72rem;font-weight:700;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(201,168,76,0.2)'" onmouseout="this.style.background='rgba(201,168,76,0.12)'">🛒 سلة</button>
@@ -3097,7 +3167,7 @@ function openProductModal(id) {
   document.getElementById('modalCat').textContent = p.cat || '';
   document.getElementById('modalName').textContent = p.name;
   document.getElementById('modalBadge').innerHTML = p.badge
-    ? `<span class="product-badge ${p.badge === 'عرض' ? 'offer' : p.badge === 'جديد' ? 'new' : ''}">${p.badge}</span>` : '';
+    ? `<span class="product-badge ${(p.badge === 'عرض' || p.badge === '🔥 عرض') ? 'offer' : p.badge === 'جديد' ? 'new' : ''}">${p.badge}</span>` : '';
 
   // ===== معرض الصور =====
   const images = (p.images && p.images.length > 0) ? p.images : (p.img ? [p.img] : []);
@@ -3278,6 +3348,9 @@ function liveSearch(val) {
   trackSearch(q);
 
   const lower = q.toLowerCase();
+  // ✅ [إضافة] لو المستخدم كتب كلمة بتدل على العروض، نضيف منتجات العروض لنتائج البحث
+  const offerKeywords = ['عروض', 'عرض', 'خصومات', 'خصم', 'تخفيض', 'تخفيضات'];
+  const isOfferQuery = offerKeywords.some(k => lower.includes(k.toLowerCase()));
   const results = PRODUCTS.filter(p => {
     return (
       (p.name  || '').toLowerCase().includes(lower) ||
@@ -3285,7 +3358,8 @@ function liveSearch(val) {
       (p.color || '').toLowerCase().includes(lower) ||
       (p.size  || '').toLowerCase().includes(lower) ||
       (p.sort  || '').toLowerCase().includes(lower) ||
-      (p.use   || '').toLowerCase().includes(lower)
+      (p.use   || '').toLowerCase().includes(lower) ||
+      (isOfferQuery && isOfferProduct(p))
     );
   });
 
